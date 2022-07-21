@@ -1,0 +1,220 @@
+from bs4 import BeautifulSoup as bs
+import pandas as pd
+pd.set_option('display.max_colwidth', 500)
+import requests
+import sys
+import re
+sys.setrecursionlimit(1700)
+
+urls = []
+Companies = []
+w = []
+l = []
+Sorter1 = []
+Sorter2 = []
+GovOrgCounter = []
+CompCounter = {}
+CompMoney = {}
+GovOrg = {}
+op = {}
+f = 0
+x = 0
+#adding all URLS to list
+def Webs():
+  global x
+#49980 is the highest number divisible by 30 under the 50k limit. With this number 
+  if x <= 49980:#we get the most searches with the 30 per page limit. 
+    l = ("https://www.fpds.gov/ezsearch/fpdsportal?q=build&s=FPDS.GOV&templateName=1.5.2&indexName=awardfull&x=0&y=0&start="+str(x))
+    #making a counter and the link generator
+    x=(x+30)
+    #adding links to the folder
+  urls.append(l)
+  #stopping when we reach the last page
+  if x != 49980:
+    Webs()
+  else:
+    Searcher()
+
+def Searcher():
+  global f
+  # Iterating through the URLS
+  for url in urls:
+    # Accessing the Webpage
+    page = requests.get(url)
+    x = 0
+    o = 0
+    
+    # Getting the webpage's content in pure html
+    soup = bs(page.content, "html.parser")
+
+      # grabbing the raw info (looking for only certain folders and results)
+    q=[i.text for i in soup.find_all(class_='results_title_text')]
+    b=[i.text for i in soup.find_all(class_='results_text')]
+      #cleaning up b for w
+    print (q)
+    for word in b:
+      w.append(word.replace('\t',''))
+    b.clear()
+    for word in w:
+      b.append(word.replace('\n',''))
+    w.clear()
+    for word in b:
+      w.append(word.replace('(view)',''))
+    b.clear()
+    for word in w:
+      b.append(word.replace('(',''))
+    w.clear()
+    for word in b:
+      w.append(word.replace(')',''))
+  
+    #Sorting the page by contract
+    for word in w: #changing this value changed when the bug occoured. Must be linked
+      if x <= (16):
+        Sorter1.append(q[0])
+        q.pop(0)
+        Sorter2.append(w[0])
+        w.pop(0)
+        x = x+1
+      if x == 17:
+        o = o+1
+        f = f+1
+        if o == 30:
+          w.clear()
+          q.clear()
+          b.clear()
+        x = 0
+        Sorter()
+        #midnight thoughts: Maybe if you zip them now and pop the first 17 
+        #keys and values each time it would not fail...
+        #also might be cleaner, lots of jumbly code here
+        # it shifts by 10
+        
+def Sorter():
+  global x
+  #Sorting our current data
+  RawData = dict(zip(Sorter1,Sorter2))
+  Sorter1.clear()
+  Sorter2.clear()
+  print ("RawData")
+  print (RawData)
+  print (f)
+  #when a contract is finished it will be looked at and stored.
+  if x == x:
+     #looking at the companies both father and normal and combinding them
+    J = RawData.get("Legal Business Name:") 
+    R = RawData.get("Ultimate Parent Legal Business Name:")
+    Q = RawData.get ("Action Obligation:")
+    W = RawData.get("Contracting Agency:")
+    
+    #adding new companies to each list while making sure there are no duplicates
+    if "Company Name: " +J not in Companies:
+      Companies.append("Company Name: "+J)
+    if "Company Name: " +R not in Companies:
+       Companies.append("Parent Company Name: "+R)
+    if J not in CompCounter:
+      CompCounter[J]=1
+    if R not in CompCounter:
+      CompCounter[R]=1
+    if J+R not in CompCounter:
+      CompCounter[R+J]=1
+      
+    #tracking first contract amount 
+    L = re.sub("[^0-9]|-", "", Q)
+    if "Parent Company Name: "+R not in CompMoney:
+      CompMoney["Parent Company Name: "+R]=L
+    if "Company Name: "+J not in CompMoney:
+      CompMoney["Company Name: "+J]=L
+    if "Combined Company Name: "+J+R not in CompMoney:
+      CompMoney["Combined Company Name: "+J+R]=L
+
+    #checking company name and counting how many times its been seen.
+    if ("Company Name: "+J and "Company Name: "+R ) in Companies:
+      CompCounter[R]=int(CompCounter.get(R))+1
+      CompCounter[J]=int(CompCounter.get(J))+1
+      CompCounter[R+J]=int(CompCounter.get(R+J))+1
+      
+      #deleting all the extra stuff on the money number spot
+      L = re.sub("[^0-9]|-", "", Q)
+      #now onto tracking how much money each company makes
+
+      #Tracking just the subsidiary 
+      p = CompMoney.get("Company Name: "+J)
+      p = int(float(p)) + int(float(L))
+      CompMoney["Company Name: "+J] = p
+
+      #Tracking just the parents company
+      p = CompMoney.get("Parent Company Name: "+R)
+      p = int(p) + int(L)
+      CompMoney["Parent Company Name: "+R] = p
+
+      #tracking both at once
+      p = CompMoney.get("Combined Company Name: "+J+R)
+      p = int(L) + int(p)
+      CompMoney["Combined Company Name: "+J+R] = p
+
+      #Then repeating for each variation of the company
+    if (J+R, W) not in GovOrg.items():
+      if (J+R) in GovOrg:
+        GovOrg[J+R] = GovOrg.get(J+R), W 
+      else:
+        GovOrg[J+R]= W
+        GovOrgCounter.insert(0, J+R+" from "+W)
+        GovOrgCounter.insert(1,1)
+    else:
+      Finder = GovOrgCounter.index(J+R+" from "+W) 
+      Finder = Finder+1
+      h = GovOrgCounter[Finder]
+      h = int(h)+1
+      GovOrgCounter.pop(Finder)
+      GovOrgCounter.insert(Finder, h)
+            
+    if (J, W) not in GovOrg.items():
+      if J in GovOrg:
+        GovOrg[J] = GovOrg.get(J), W
+      else:
+        GovOrg[J]=W
+        GovOrgCounter.insert(0, J+" from "+W)
+        GovOrgCounter.insert(1,1)
+    else:
+      Finder = GovOrgCounter.index(J+" from "+W) 
+      Finder = Finder+1
+      h = GovOrgCounter[Finder]
+      h = int(h)+1
+      GovOrgCounter.pop(Finder)
+      GovOrgCounter.insert(Finder, h)
+            
+    if (R, W) not in GovOrg.items():
+      if R in GovOrg:
+        GovOrg[R]= GovOrg.get(R), W
+      else:
+        GovOrg[R]=W
+        GovOrgCounter.insert(0, R+" from "+W)
+        GovOrgCounter.insert(1,1)
+    else:
+      Finder = GovOrgCounter.index(R+" from "+W) 
+      Finder = Finder+1
+      h = GovOrgCounter[Finder]
+      h = int(h)+1
+      GovOrgCounter.pop(Finder)
+      GovOrgCounter.insert(Finder, h)
+        
+  #clearing the dict
+  RawData.clear()
+    #test to see if it works (it doesnt)
+  #print ("companies") #testing
+  #print (Companies) #testing
+  #print ("comp counter") #testing
+  #print (CompCounter) #testing
+  #print ("comMoney") #testing
+  #print (CompMoney) #testing
+  #print ("GovOrg") #testing
+  #print (GovOrg) #testing
+  #print ("GovOrgCounter")
+  #print (GovOrgCounter)
+
+Webs()
+#print results
+print (Companies) #testing
+print (CompCounter) #testing
+print (CompMoney) #testing
+print (GovOrg)   #testing
